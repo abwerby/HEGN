@@ -1,0 +1,5 @@
+*.pth
+*.pt
+*.ply
+*.pkl
+*.pkl.gz
