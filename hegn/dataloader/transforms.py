@@ -166,7 +166,7 @@ class RandomCrop:
 
 
 class RandomTransformSE3:
-    def __init__(self, rot_mag: float = 180.0, trans_mag: float = 1.0, random_mag: bool = False):
+    def __init__(self, rot_mag: float = 180.0, trans_mag: float = 1.0, scale_range: tuple = (0.5, 1.5), random_mag: bool = False):
         """Applies a random rigid transformation to the source point cloud
 
         Args:
@@ -179,6 +179,7 @@ class RandomTransformSE3:
         self._rot_mag = rot_mag
         self._trans_mag = trans_mag
         self._random_mag = random_mag
+        self._scale_range = scale_range
 
     def generate_transform(self):
         """Generate a random SE3 transformation (3, 4) """
@@ -191,13 +192,20 @@ class RandomTransformSE3:
 
         # Generate rotation
         rand_rot = special_ortho_group.rvs(3)
-        axis_angle = Rotation.as_rotvec(Rotation.from_dcm(rand_rot))
+        axis_angle = Rotation.as_rotvec(Rotation.from_matrix(rand_rot))
         axis_angle *= rot_mag / 180.0
-        rand_rot = Rotation.from_rotvec(axis_angle).as_dcm()
+        rand_rot = Rotation.from_rotvec(axis_angle).as_matrix()
 
         # Generate translation
         rand_trans = np.random.uniform(-trans_mag, trans_mag, 3)
         rand_SE3 = np.concatenate((rand_rot, rand_trans[:, None]), axis=1).astype(np.float32)
+
+        # Generate scale
+        if self._scale_range is not None:
+            scale = np.random.uniform(self._scale_range[0], self._scale_range[1], 3)
+            scale_matrix = np.eye(3)
+            np.fill_diagonal(scale_matrix, scale)
+            rand_SE3 = np.concatenate((rand_SE3[:, :3] @ scale_matrix, rand_SE3[:, 3:4]), axis=1)
 
         return rand_SE3
 
@@ -222,7 +230,8 @@ class RandomTransformSE3:
             np.random.seed(sample['idx'])
 
         if 'points' in sample:
-            sample['points'], _, _ = self.transform(sample['points'])
+            sample['points'], _, igt = self.transform(sample['points'])
+            sample['transformations'] = igt
         else:
             src_transformed, transform_r_s, transform_s_r = self.transform(sample['points_src'])
             sample['transform_gt'] = transform_r_s  # Apply to source to get reference

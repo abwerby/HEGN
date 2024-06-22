@@ -10,6 +10,9 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import Compose
 import open3d as o3d
 
+import sys
+# add pervious directory to the path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from hegn.dataloader.transforms import (
                         Resampler,
                         FixedResampler,
@@ -137,18 +140,17 @@ def main():
     print('Sample label:', sample['label'])
 
     # show the point cloud of the sample with open3d
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(sample['points'][:, :3])
-    o3d.visualization.draw_geometries([pcd])
+    pcd1 = o3d.geometry.PointCloud()
+    pcd1.points = o3d.utility.Vector3dVector(sample['points'][:, :3])
 
 
     transform = Compose([
         Resampler(1024),
         RandomJitter(scale=0.01, clip=0.05),
-        RandomTransformSE3(rot_mag=180, trans_mag=0.5)
+        RandomTransformSE3(rot_mag=0, trans_mag=0.5, scale_range=(2.5, 5.5)),
     ])
 
-    dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048', subset='train',
+    dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048', subset='train', categories=['airplane'],
                           transform=transform)
     sample = dataset[0]
     print('Sample:', sample)
@@ -158,12 +160,14 @@ def main():
 
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(sample['points'][:, :3])
-    o3d.visualization.draw_geometries([pcd])
+
+    o3d.visualization.draw_geometries([pcd, pcd1])
+    # print the bounding box of the point cloud
 
 
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=0)
     for i_batch, sample_batched in enumerate(dataloader):
-        print(i_batch, sample_batched['points'].size(), sample_batched['label'].size())
+        print(i_batch, sample_batched['points'].size(), sample_batched['label'])
         if i_batch == 1:
             break
 

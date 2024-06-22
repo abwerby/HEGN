@@ -3,5 +3,6 @@
 *.ply
 *.pkl
 *.pkl.gz
+*.pyc
 /data
-*/__pycache__/
+*__pycache__
