@@ -1,7 +1,9 @@
 import torch.nn as nn
 import torch.utils.data
 import torch.nn.functional as F
-from models.vn_layers import VNLinearLeakyReLU, VNStdFeature, VNMaxPool, mean_pool
+
+
+from hegn.models.vn_layers import VNLinearLeakyReLU, VNStdFeature, VNMaxPool, mean_pool
 from hegn.utils.vn_dgcnn_util import get_graph_feature
 
 
@@ -61,21 +63,5 @@ class VNDGCNN(nn.Module):
         x = torch.cat((x1, x2, x3, x4), dim=1)
         x = self.conv5(x)
         
-        num_points = x.size(-1)
-        x_mean = x.mean(dim=-1, keepdim=True).expand(x.size())
-        x = torch.cat((x, x_mean), 1)
-        x, trans = self.std_feature(x)
-        x = x.view(batch_size, -1, num_points)
-        
-        x1 = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)
-        x2 = F.adaptive_avg_pool1d(x, 1).view(batch_size, -1)
-        x = torch.cat((x1, x2), 1)
-        
-        x = F.leaky_relu(self.bn1(self.linear1(x)), negative_slope=0.2)
-        x = self.dp1(x)
-        x = F.leaky_relu(self.bn2(self.linear2(x)), negative_slope=0.2)
-        x = self.dp2(x)
-        # x = self.linear3(x)
-        
         trans_feat = None
-        return x, trans_feat
+        return x

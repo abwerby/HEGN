@@ -50,7 +50,6 @@ def get_graph_feature(x, k=20, idx=None, x_coord=None, device='cuda'):
     device = torch.device(device)
 
     idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
-
     idx = idx + idx_base
 
     idx = idx.view(-1)
