@@ -159,7 +159,9 @@ def main():
     print('Sample idx:', sample['idx'])
 
     pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(sample['points'][:, :3])
+    pcd1 = o3d.geometry.PointCloud()
+    pcd1.points = o3d.utility.Vector3dVector(sample['points'][:, :3])
+    pcd.points = o3d.utility.Vector3dVector(sample['points_ts'][:, :3])
 
     o3d.visualization.draw_geometries([pcd, pcd1])
     # print the bounding box of the point cloud

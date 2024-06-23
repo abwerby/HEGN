@@ -230,8 +230,9 @@ class RandomTransformSE3:
             np.random.seed(sample['idx'])
 
         if 'points' in sample:
-            sample['points'], _, igt = self.transform(sample['points'])
-            sample['transformations'] = igt
+            sample['points_ts'], gt, igt = self.transform(sample['points'])
+            sample['transform'] = igt
+            sample['transform_gt'] = gt
         else:
             src_transformed, transform_r_s, transform_s_r = self.transform(sample['points_src'])
             sample['transform_gt'] = transform_r_s  # Apply to source to get reference
