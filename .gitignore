@@ -3,3 +3,7 @@
 *.ply
 *.pkl
 *.pkl.gz
+
+# Folders to ignore
+__pycache__/
+data/
