@@ -1,0 +1,6 @@
+tensorboard
+h5py
+plotly
+einops
+
+# pip install "git+https://github.com/facebookresearch/pytorch3d.git"
