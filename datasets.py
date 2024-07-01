@@ -63,7 +63,7 @@ def get_test_datasets(args: argparse.Namespace):
     transforms = torchvision.transforms.Compose(transforms)
 
     if args.dataset_type == 'modelnet_hdf':
-        test_data = ModelNetHdf(args.dataset_path, subset='test', categories=test_categories, transforms=transforms)
+        test_data = ModelNetHdf(args.dataset_path, subset='test', categories=test_categories, transform=transforms)
     else:
         raise NotImplementedError
 
