@@ -71,7 +71,7 @@ class VNLinearLeakyReLU(nn.Module):
 
 class VNLinearAndLeakyReLU(nn.Module):
     def __init__(self, in_channels, out_channels, dim=5, share_nonlinearity=False, use_batchnorm='norm', negative_slope=0.2):
-        super(VNLinearLeakyReLU, self).__init__()
+        super(VNLinearAndLeakyReLU, self).__init__()
         self.dim = dim
         self.share_nonlinearity = share_nonlinearity
         self.use_batchnorm = use_batchnorm

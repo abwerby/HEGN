@@ -59,11 +59,9 @@ def get_graph_feature(x, k=20, idx=None, x_coord=None, device='cuda'):
 
     x = x.transpose(2, 1).contiguous()
     feature = x.view(batch_size*num_points, -1)[idx, :]
-    feature = feature.view(batch_size, num_points, k, num_dims, 3) 
+    feature = feature.view(batch_size, num_points, k, num_dims, 3)
     x = x.view(batch_size, num_points, 1, num_dims, 3).repeat(1, 1, k, 1, 1)
-    
     feature = torch.cat((feature-x, x), dim=3).permute(0, 3, 4, 1, 2).contiguous()
-  
     return feature
 
 
