@@ -207,7 +207,7 @@ class RandomTransformSE3:
             np.fill_diagonal(scale_matrix, scale)
             rand_SE3 = np.concatenate((rand_SE3[:, :3] @ scale_matrix, rand_SE3[:, 3:4]), axis=1)
 
-        return rand_SE3
+        return rand_SE3, rand_rot, rand_trans, scale_matrix
 
     def apply_transform(self, p0, transform_mat):
         p1 = se3.transform(transform_mat, p0[:, :3])
@@ -221,8 +221,9 @@ class RandomTransformSE3:
         return p1, gt, igt
 
     def transform(self, tensor):
-        transform_mat = self.generate_transform()
-        return self.apply_transform(tensor, transform_mat)
+        transform_mat, rand_rot, rand_trans, scale_matrix = self.generate_transform()
+        p, gt, igt = self.apply_transform(tensor, transform_mat)
+        return p, gt, igt, rand_rot, rand_trans, scale_matrix
 
     def __call__(self, sample):
 
@@ -230,10 +231,14 @@ class RandomTransformSE3:
             np.random.seed(sample['idx'])
 
         if 'points' in sample:
-            sample['points_ts'], gt, igt = self.transform(sample['points'])
+            sample['points_ts'], gt, igt, R, T, S = self.transform(sample['points'])
             sample['transform'] = igt
             sample['transform_gt'] = gt
+            sample['R'] = R
+            sample['T'] = T
+            sample['S'] = S
         else:
+            # NOT USED
             src_transformed, transform_r_s, transform_s_r = self.transform(sample['points_src'])
             sample['transform_gt'] = transform_r_s  # Apply to source to get reference
             sample['points_src'] = src_transformed
