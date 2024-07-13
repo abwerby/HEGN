@@ -5,4 +5,5 @@
 *.pkl.gz
 *.pyc
 /data
+/wandb
 *__pycache__

@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 EPS = 1e-6
-
 class VNLinear(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(VNLinear, self).__init__()
@@ -66,36 +65,6 @@ class VNLinearLeakyReLU(nn.Module):
         mask = (dotprod >= 0).float()
         d_norm_sq = (d*d).sum(2, keepdims=True)
         x_out = self.negative_slope * p + (1-self.negative_slope) * (mask*p + (1-mask)*(p-(dotprod/(d_norm_sq+EPS))*d))
-        return x_out
-
-
-class VNLinearAndLeakyReLU(nn.Module):
-    def __init__(self, in_channels, out_channels, dim=5, share_nonlinearity=False, use_batchnorm='none', negative_slope=0.2):
-        super(VNLinearAndLeakyReLU, self).__init__()
-        self.dim = dim
-        self.share_nonlinearity = share_nonlinearity
-        self.use_batchnorm = use_batchnorm
-        self.negative_slope = negative_slope
-        
-        self.linear = VNLinear(in_channels, out_channels)
-        self.leaky_relu = VNLeakyReLU(out_channels, share_nonlinearity=share_nonlinearity, negative_slope=negative_slope)
-        
-        # BatchNorm
-        self.use_batchnorm = use_batchnorm
-        if use_batchnorm != 'none':
-            self.batchnorm = VNBatchNorm(out_channels, dim=dim, mode=use_batchnorm)
-    
-    def forward(self, x):
-        '''
-        x: point features of shape [B, N_feat, 3, N_samples, ...]
-        '''
-        # Conv
-        x = self.linear(x)
-        # InstanceNorm
-        if self.use_batchnorm != 'none':
-            x = self.batchnorm(x)
-        # LeakyReLU
-        x_out = self.leaky_relu(x)
         return x_out
 
 
