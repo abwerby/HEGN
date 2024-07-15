@@ -15,13 +15,13 @@ logging.basicConfig(
     datefmt='%H:%M:%S')
 
      
-class cross_context(nn.Module):
+class CrossContext(nn.Module):
     """
         Cross context aggregation module
         apply VN-TRANSFORMER to the input features
     """
     def __init__(self, feature_dim=32, atten_multi_head_c=16, k=16):
-        super(cross_context, self).__init__()
+        super(CrossContext, self).__init__()
         self.k_nn = k
         self.atten_multi_head_c = atten_multi_head_c
         self.vn_mlp_q = VNLinearLeakyReLU(feature_dim, feature_dim, dim=3)
@@ -55,16 +55,63 @@ class cross_context(nn.Module):
         qk = (Ky * Qx[..., None]).sum(2)
         logging.info(f"qk {qk.size()}")
         B, C, N, K = qk.size()
-        N_head = C // self.atten_multi_head_c
-        qk = qk.view(B, N_head, self.atten_multi_head_c, N, K)
-        atten = qk.sum(2, keepdim=True) / torch.sqrt(torch.tensor(3 * self.atten_multi_head_c, dtype=torch.float32))
+        # N_head = C // self.atten_multi_head_c
+        # qk = qk.view(B, N_head, self.atten_multi_head_c, N, K)
+        atten = qk / torch.sqrt(torch.tensor(3 * C, dtype=torch.float32))
         atten = torch.softmax(atten, dim=-1)
-        atten = atten.expand(-1, -1, self.atten_multi_head_c, -1, -1).contiguous()
+        # atten = atten.expand(-1, -1, sel, -1, -1).contiguous()
         atten = atten.view(B, C, N, K).unsqueeze(2)
         logging.info(f"atten {atten.size()}")
         return x + (atten * Vy).sum(-1)
 
 
+class GlobalContext(nn.Module):
+    def __init__(self, mlp_in, mlp_out):
+        super(GlobalContext, self).__init__()
+        self.vn_mlp = VNLinearLeakyReLU(mlp_in, mlp_out, dim=3)
+        self.pool = mean_pool
+    
+    def forward(self, fx):
+        Fx = self.pool(fx, dim=-1, keepdim=True).expand(fx.size())
+        return self.vn_mlp(torch.cat((fx, Fx), dim=1))
+        
+class InvariantMapping(nn.Module):
+    def __init__(self, in_feat):
+        super(InvariantMapping, self).__init__()
+    
+    def forward(self, fx, fy, topk):
+        fx_mean = torch.mean(fx, dim=1)
+        fy_mean = torch.mean(fy, dim=1)
+        fx_par = fx_mean / (torch.norm(fx_mean, dim=1).unsqueeze(1).repeat(1, fx_mean.size(1), 1) + 1e-6)
+        fy_par = fy_mean / (torch.norm(fy_mean, dim=1).unsqueeze(1).repeat(1, fy_mean.size(1), 1) + 1e-6)
+        phi_x = torch.einsum('bcdn,bdn->bnc', fx, fx_par)
+        phi_y = torch.einsum('bcdn,bdn->bnc', fy, fy_par)
+        Sc = F.softmax(torch.einsum('bnc,bnc->bn', phi_x, phi_y), dim=-1)
+        idx = torch.topk(Sc, Sc.shape[0]//topk, dim=-1)[1]
+        b, c, n, s = fx.size()
+        idx = idx.unsqueeze(1).unsqueeze(2).expand(-1, c, 3, -1)
+        fx = fx.gather(3, idx)
+        fy = fy.gather(3, idx)
+        return fx, fy
+
+class HierarchicalAggregation(nn.Module):
+    def __init__(self, in_feat, out_feat):
+        super(HierarchicalAggregation, self).__init__()
+        self.vn_mlp = VNLinearLeakyReLU(in_feat, out_feat, dim=3)
+    
+    def forward(self, fx):
+        return self.vn_mlp(torch.cat(fx))
+
+class Alignment(nn.Module):
+    def __init__(self):
+        super(Alignment, self).__init__()
+    
+    def forward(self, fx, fy):
+        H = torch.einsum('bcd,bce->bde', fx, fy)
+        u, s, v = torch.svd(H)
+        R = torch.matmul(v, u.transpose(1, 2))
+        S = torch.norm(fy, dim=1)/torch.norm(fx, dim=1)
+        return R, S
 
 
 class HEGN(nn.Module):
@@ -75,11 +122,13 @@ class HEGN(nn.Module):
         self.num_blocks = args.num_blocks
         self.topk = args.topk
         self.cross_context_feat = args.vngcnn_out
-        self.vn_dgcnn = VNDGCNN(args.vngcnn_in[0], args.vngcnn_out[0], args.n_knn[0]) 
-        self.cross_context = cross_context(self.cross_context_feat[0], 8, self.n_knn[0])
-        self.vn_mlp_global = VNLinearLeakyReLU(self.cross_context_feat[0]*2, self.cross_context_feat[0], dim=3)
-        self.vn_mlp_hierarchical = VNLinearLeakyReLU(np.sum(self.cross_context_feat), 32, dim=3)
-        self.pool = VNMaxPool(self.cross_context_feat[-1])
+        self.local_context_feat = VNDGCNN(args.vngcnn_in[0], args.vngcnn_out[0], self.n_knn[0], pooling=args.pooling)
+        self.cross_context = CrossContext(args.vngcnn_out[0], 16, self.n_knn[1])
+        self.global_context = GlobalContext(args.vngcnn_out[0]*2, args.vngcnn_out[0]*2)
+        self.invariant_mapping = InvariantMapping(args.vngcnn_out[0])
+        self.hierarchical_aggregation = HierarchicalAggregation(args.vngcnn_out[0]*2, args.vngcnn_out[0])
+        self.alignment = Alignment()
+        self.pool = mean_pool
 
     def forward(self, x, y):
         logging.disable(logging.CRITICAL)
@@ -91,8 +140,8 @@ class HEGN(nn.Module):
         logging.info(f"fx {fx.size()}")
         logging.info(f"fy {fy.size()}")
         # 1. local context aggregation
-        fx = self.vn_dgcnn(fx)
-        fy = self.vn_dgcnn(fy) # B, C, 3, N
+        fx = self.local_context_feat(fx) # B, C, 3, N
+        fy = self.local_context_feat(fy)
         logging.info(f"local context x {fx.size()}")
         logging.info(f"local context y {fy.size()}")
         # 3. cross context 
@@ -101,73 +150,26 @@ class HEGN(nn.Module):
         logging.info(f"cross context fx {fx.size()}")
         logging.info(f"cross context fy {fy.size()}")
         # 4. global context aggregation
-        Fx = torch.mean(fx, dim=-1, keepdim=True).repeat(1, 1, 1, fx.size(-1))
-        Fy = torch.mean(fy, dim=-1, keepdim=True).repeat(1, 1, 1, fy.size(-1))
-        logging.info(f"global context Fx {Fx.size()}")
-        logging.info(f"global context Fy {Fy.size()}")
-        fx = self.vn_mlp_global(torch.cat((fx, Fx), dim=1))
-        fy = self.vn_mlp_global(torch.cat((fy, Fy), dim=1))
+        fx = self.global_context(fx)
+        fy = self.global_context(fy)
         logging.info(f"global context fx {fx.size()}")
         logging.info(f"global context fy {fy.size()}")
         # 5. invariant mapping
-        fx_mean = torch.mean(fx, dim=1)
-        fy_mean = torch.mean(fy, dim=1)
-        logging.info(f"fx_mean {fx_mean.size()}")
-        logging.info(f"fy_mean {fy_mean.size()}")
-        logging.info(f"fx mean norm {torch.norm(fx_mean, dim=1).unsqueeze(1).repeat(1, fx_mean.size(1), 1).size()}")
-        fx_par = fx_mean / torch.norm(fx_mean, dim=1).unsqueeze(1).repeat(1, fx_mean.size(1), 1)
-        fy_par = fy_mean / torch.norm(fy_mean, dim=1).unsqueeze(1).repeat(1, fy_mean.size(1), 1)
-        logging.info(f"fx_par {fx_par.size()}")
-        logging.info(f"fy_par {fy_par.size()}")
-        phi_x = torch.einsum('bcdn,bdn->bnc', fx, fx_par)
-        phi_y = torch.einsum('bcdn,bdn->bnc', fy, fy_par)
-        logging.info(f"phi_x {phi_x.size()}")
-        logging.info(f"phi_y {phi_y.size()}")
-        # 6. softmax
-        Sc = F.softmax(torch.einsum('bnc,bnc->bn', phi_x, phi_y), dim=-1)
-        logging.info(f"SC min {Sc.min()}, Sc max {Sc.max()}")
-        logging.info(f"Sc {Sc.size()}")
-        # select top k correspondences from fx and fy based on Sc
-        logging.info(f"topk {Sc.size(1)//4}")
-        _, idx = torch.topk(Sc, Sc.size(1)//4, dim=-1)
-        logging.info(f"idx {idx}")
-        logging.info(f"idx {idx.size()}")
-        b, c, n, s = fx.size()
-        idx = idx.unsqueeze(1).unsqueeze(2).expand(-1, c, 3, -1)
-        fx = fx.gather(3, idx)
-        fy = fy.gather(3, idx)
-        fx_block.append(fx)
-        fy_block.append(fy)
+        fx, fy = self.invariant_mapping(fx, fy, 4)
+        logging.info(f"inv fx {fx.size()}")
+        logging.info(f"inv fy {fy.size()}")
+        # 9. Hierarchical aggregation
+        fx = self.pool(fx)
+        fy = self.pool(fy)
+        fx = self.hierarchical_aggregation([fx])
+        fy = self.hierarchical_aggregation([fy])
         logging.info(f"fx {fx.size()}")
         logging.info(f"fy {fy.size()}")
-        logging.info(f"fx_block {len(fx_block)}")
-        logging.info(f"num blocks {len(fx_block)}")
-        logging.info(f"fx0 {fx_block[0].size()}")
-        logging.info(f"fy0 {fy_block[0].size()}")
-        # 9. Hierarchical aggregation
-        for i in range(len(fx_block)):
-            fx_block[i] = mean_pool(fx_block[i], dim=-1)
-            fy_block[i] = mean_pool(fy_block[i], dim=-1)
-        logging.info(f"fx cat {torch.cat(fx_block, dim=1).size()}")
-        Fx = self.vn_mlp_hierarchical(torch.cat(fx_block, dim=1))
-        Fy = self.vn_mlp_hierarchical(torch.cat(fy_block, dim=1))
-        logging.info(f"Fx {Fx.size()}")
-        logging.info(f"Fy {Fy.size()}")
-        logging.info(f"Fy.T {Fy.transpose(1, 2).size()}")
         # 10. 9Dof Alignment
-        H = torch.einsum('bcd,bce->bde', Fx, Fy)
-        u, s, v = torch.svd(H)
-        logging.info(f"H {H.size()}")
-        logging.info(f"s {s.size()}")
-        logging.info(f"u {u.size()}")
-        logging.info(f"v {v.size()}")
-        R = torch.matmul(u, v)
+        R, S = self.alignment(fx, fy)
         logging.info(f"R {R.size()}")
-        S = torch.norm(Fy, dim=1)/torch.norm(Fx, dim=1)
         logging.info(f"S {S.size()}")
         return R, S
-
-
 
 class HEGN_Loss(nn.Module):
     def __init__(self):

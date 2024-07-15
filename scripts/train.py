@@ -28,8 +28,8 @@ from hegn.dataloader.transforms import (
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
 # Define hyperparameters
-learning_rate = 0.001
-batch_size = 1
+learning_rate = 1e-4
+batch_size = 32
 num_epochs = 100
 optimizer_name = 'adam'
 
@@ -44,7 +44,7 @@ dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048',
                       subset='train', transform=transform)
 # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 # select only 10% of the dataset
-dataloader = DataLoader(dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.0003*len(dataset)))))
+dataloader = DataLoader(dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.0006*len(dataset)))))
 class Args:
     def __init__(self):
         self.device = 'cuda'
@@ -60,13 +60,15 @@ model = HEGN(args=args).to(device)
 
 logging.info(f"number of parameters in HEGN: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 logging.info(f"dataloader length: {len(dataloader)}")
+logging.info(f"sample in one batch: {next(iter(dataloader))['points'].size()}")
 
 
 # Define loss function and optimizer
 criterion = HEGN_Loss()
+metric = nn.MSELoss()
 
 if optimizer_name == 'adam':
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, betas=(0.9, 0.99))
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-5, betas=(0.9, 0.99))
 elif optimizer_name == 'sgd':
     optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4, momentum=0.9)
 
@@ -85,6 +87,8 @@ wandb.init(
     "model args": args.__dict__
     }
 )
+
+# label = torch.randn(3, 32, 3).to(device).to(torch.float32)
 
 # Training loop
 model.train()
@@ -112,18 +116,19 @@ for epoch in range(num_epochs):
         # S, R, t = S_gt, R_gt, t_gt.unsqueeze(-1)
         x_aligned = torch.matmul(R, S @ x_par) + t
         loss = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
+        # loss = metric(R, label)
         batches_loss += loss.item()
         loss.backward()
                 
-        # # log the gradients
+        # log the gradients
         # for name, param in model.named_parameters():
         #     if param.grad is not None:
-        #         wandb.log({f"{name}_grad": wandb.Histogram(param.grad.norm().cpu().detach().numpy())})
+        #         wandb.log({f"{name}_grad": wandb.Histogram(param.grad.cpu().detach().numpy())})
         
         optimizer.step()
         logging.disable(logging.NOTSET)
         # logging.info(f"epoch {epoch} batch {batch_idx} loss: {loss.item()}")
-        wandb.log({"batch idx": batch_idx, "batch loss": loss.item()})
+        # wandb.log({"batch idx": batch_idx, "batch loss": loss.item()})
     wandb.log({"epoch": epoch, "epoch loss": batches_loss/len(dataloader)})
     logging.info(f"epoch {epoch} loss: {batches_loss/len(dataloader)}")
 

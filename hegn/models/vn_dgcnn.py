@@ -14,7 +14,7 @@ class VNDGCNN(nn.Module):
         self.n_knn = k
         self.in_feat = in_feat
         self.conv1 = VNLinearLeakyReLU(in_feat, out_feat)
-        self.conv2 = VNLinearLeakyReLU(out_feat, out_feat)
+        # self.conv2 = VNLinearLeakyReLU(out_feat, out_feat)
 
         if pooling == 'max':
             self.pool = VNMaxPool(self.in_feat)
@@ -25,6 +25,5 @@ class VNDGCNN(nn.Module):
     def forward(self, x):
         x = get_graph_feature(x, k=self.n_knn)
         x = self.conv1(x)
-        x = self.conv2(x)
         x = self.pool(x)
         return x

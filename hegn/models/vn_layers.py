@@ -58,7 +58,7 @@ class VNLinearLeakyReLU(nn.Module):
         # Linear
         p = self.map_to_feat(x.transpose(1,-1)).transpose(1,-1)
         # BatchNorm
-        # p = self.batchnorm(p)
+        p = self.batchnorm(p)
         # LeakyReLU
         d = self.map_to_dir(x.transpose(1,-1)).transpose(1,-1)
         dotprod = (p*d).sum(2, keepdims=True)
