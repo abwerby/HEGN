@@ -221,4 +221,4 @@ class HEGN_Loss(nn.Module):
         L_reg = torch.norm(R_loss, dim=(1, 2))**2 + torch.norm(S - S_gt, dim=1)**2 + torch.norm(t - t_gt, dim=1)**2
         # compute chamfer distance
         L_chamfer, _ = chamfer_distance(x_aligned, y)
-        return L_reg.mean() + L_chamfer
+        return (L_reg.mean() + L_chamfer, L_reg.mean(), L_chamfer)

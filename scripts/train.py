@@ -42,9 +42,9 @@ transform = Compose([
 
 dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048',
                       subset='train', transform=transform)
-# dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 # select only 10% of the dataset
-dataloader = DataLoader(dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.1*len(dataset)))))
+# dataloader = DataLoader(dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.1*len(dataset)))))
 class Args:
     def __init__(self):
         self.device = 'cuda'
@@ -91,6 +91,8 @@ wandb.init(
 model.train()
 for epoch in range(num_epochs):
     batches_loss = 0
+    batches_loss_reg = 0
+    batches_loss_chm = 0
     for batch_idx, batch in enumerate(dataloader):
         x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
         y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
@@ -112,23 +114,23 @@ for epoch in range(num_epochs):
         # uncomment the following line to use ground truth S, R, t
         # S, R, t = S_gt, R_gt, t_gt.unsqueeze(-1)
         x_aligned = torch.matmul(R, S @ x_par) + t
-        loss = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
-        # loss = criterion(R, t, S, R_gt, t_gt, S_gt)
-        # loss = metric(R, label)
-        batches_loss += loss.item()
-        loss.backward()
-                
-        # # log the gradients
-        # for name, param in model.named_parameters():
-        #     if param.grad is not None:
-        #         wandb.log({f"{name}_grad": wandb.Histogram(param.grad.cpu().detach().numpy())})
+        loss, loss_reg, loss_chm = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
         
+        batches_loss += loss.item()
+        batches_loss_reg += loss_reg.item()
+        batches_loss_chm += loss_chm.item()
+        loss.backward()
         optimizer.step()
         logging.disable(logging.NOTSET)
         # logging.info(f"epoch {epoch} batch {batch_idx} loss: {loss.item()}")
         # wandb.log({"batch idx": batch_idx, "batch loss": loss.item()})
-    wandb.log({"epoch": epoch, "epoch loss": batches_loss/len(dataloader)})
-    logging.info(f"epoch {epoch} loss: {batches_loss/len(dataloader)}")
+    wandb.log({
+            "epoch": epoch,
+            "epoch loss": batches_loss/len(dataloader),
+            "reg loss": batches_loss_reg/len(dataloader),
+            "chm loss": batches_loss_chm/len(dataloader)
+            })
+    logging.info(f"epoch {epoch} loss: {batches_loss/len(dataloader)}, reg loss: {batches_loss_reg/len(dataloader)}, chm loss: {batches_loss_chm/len(dataloader)}")
 
 # Save the model
 torch.save(model.state_dict(), 'checkpoints/hegn.pth')
