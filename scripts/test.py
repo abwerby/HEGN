@@ -25,6 +25,16 @@ from hegn.dataloader.transforms import (
                         RandomTransformSE3
                     )
 
+
+def RMSE(x, R, S, t, R_gt, S_gt, t_gt):
+    """
+        Compute the root mean squared error between predicted and ground truth transformation
+        on the same point cloud
+    """
+    x_aligned = torch.matmul(R, S @ x) + t
+    x_gt_aligned = torch.matmul(R_gt, S_gt @ x) + t_gt.unsqueeze(-1)
+    return torch.norm(x_aligned - x_gt_aligned, dim=1).mean()
+
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 batch_size = 32
@@ -69,6 +79,7 @@ with torch.no_grad():
     running_loss = 0.0
     running_loss_reg = 0.0
     running_loss_chm = 0.0
+    RMSE_loss = 0.0
     time_per_batch = []
     for i, batch in enumerate(dataloader):
         x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
@@ -92,14 +103,16 @@ with torch.no_grad():
         if curr_batch_size == batch_size:
             time_per_batch.append(end_time - start_time)
         loss, loss_reg, loss_chm = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
+        # calculate RMSE
+        RMSE_loss += RMSE(x_par, R, S, t, R_gt, S_gt, t_gt)
         running_loss += loss.item()
         running_loss_reg += loss_reg.item()
         running_loss_chm += loss_chm.item()
 
 
 print(f'Loss: {running_loss/len(dataloader)}')
-print(f'Reg Loss MSE: {running_loss_reg/len(dataloader)}')
-print(f'Reg loss RMSE: {running_loss_reg/len(dataloader)**0.5}')
+print(f'Reg Loss: {running_loss_reg/len(dataloader)}')
+print(f'RMSE: {RMSE_loss/len(dataloader)}')
 print(f'Chm Loss: {running_loss_chm/len(dataloader)}')
 print(f'Average time per batch: {sum(time_per_batch)/len(time_per_batch)}, FPS: {1/(sum(time_per_batch)/len(time_per_batch))}')
 print(f'Max time per batch: {max(time_per_batch)}')
