@@ -4,10 +4,11 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.optim as optim
 from torchvision.transforms import Compose
-
+from sklearn.model_selection import train_test_split
 import open3d as o3d
 
 import logging
+from tqdm import tqdm
 import os
 import sys
 # add current directory to the path
@@ -28,7 +29,7 @@ def train():
         
     # Define hyperparameters
     learning_rate = 1e-3
-    batch_size = 16
+    batch_size = 32
     num_epochs = 100
     optimizer_name = 'adam'
 
@@ -41,7 +42,12 @@ def train():
 
     dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048',
                         subset='train', transform=transform)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # split the dataset into train and vaild
+    train_dataset, vaild_dataset = train_test_split(dataset, test_size=0.2) 
+    
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    vaild_dataloader = DataLoader(vaild_dataset, batch_size=batch_size, shuffle=True)
+    
     # select only 10% of the dataset
     # dataloader = DataLoader(dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.1*len(dataset)))))
     class Args:
@@ -57,8 +63,8 @@ def train():
     model = HEGN(args=args).to(device)
 
     logging.info(f"number of parameters in HEGN: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
-    logging.info(f"dataloader length: {len(dataloader)}")
-    logging.info(f"sample in one batch: {next(iter(dataloader))['points'].size()}")
+    logging.info(f"dataloader length: {len(train_dataloader)}")
+    logging.info(f"sample in one batch: {next(iter(vaild_dataloader))['points'].size()}")
 
 
     # Define loss function and optimizer
@@ -92,7 +98,7 @@ def train():
         batches_loss = 0
         batches_loss_reg = 0
         batches_loss_chm = 0
-        for batch_idx, batch in enumerate(dataloader):
+        for batch_idx, batch in enumerate(tqdm(train_dataloader)):
             x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
             y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
             t_gt = batch['T'].to(device).to(torch.float32)
@@ -119,13 +125,47 @@ def train():
             loss.backward()
             optimizer.step()
             logging.disable(logging.NOTSET)
+        # Validation loop
+        model.eval()
+        with torch.no_grad():
+            vaild_batches_loss = 0
+            vaild_batches_loss_reg = 0
+            vaild_batches_loss_chm = 0
+            for batch_idx, batch in enumerate(vaild_dataloader):
+                x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
+                y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
+                t_gt = batch['T'].to(device).to(torch.float32)
+                R_gt = batch['R'].to(device).to(torch.float32)
+                S_gt = batch['S'].to(device).to(torch.float32)
+                # find centroids of both x and y
+                x_centroid = x.mean(dim=2, keepdim=True)
+                y_centroid = y.mean(dim=2, keepdim=True)
+                x_par = x - x_centroid
+                y_par = y - y_centroid
+                R, S = model(x_par, y_par)
+                t = y_centroid - torch.matmul(R, x_centroid)
+                S = torch.diag_embed(S)
+                x_aligned = torch.matmul(R, S @ x_par) + t
+                loss, loss_reg, loss_chm = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
+                vaild_batches_loss += loss.item()
+                vaild_batches_loss_reg += loss_reg.item()
+                vaild_batches_loss_chm += loss_chm.item()
         wandb.log({
                 "epoch": epoch,
-                "epoch loss": batches_loss/len(dataloader),
-                "reg loss": batches_loss_reg/len(dataloader),
-                "chm loss": batches_loss_chm/len(dataloader)
+                "epoch train loss": batches_loss/len(train_dataloader),
+                "reg train loss": batches_loss_reg/len(train_dataloader),
+                "chm train loss": batches_loss_chm/len(train_dataloader),
+                "epoch vaild loss": vaild_batches_loss/len(vaild_dataloader),
+                "reg vaild loss": vaild_batches_loss_reg/len(vaild_dataloader),
+                "chm vaild loss": vaild_batches_loss_chm/len(vaild_dataloader)
                 })
-        logging.info(f"epoch {epoch} loss: {batches_loss/len(dataloader)}, reg loss: {batches_loss_reg/len(dataloader)}, chm loss: {batches_loss_chm/len(dataloader)}")
+        logging.info(f"epoch {epoch} loss: {batches_loss/len(train_dataloader)}, \
+                reg loss: {batches_loss_reg/len(train_dataloader)}, \
+                chm loss: {batches_loss_chm/len(train_dataloader)} \
+                vaild loss: {vaild_batches_loss/len(vaild_dataloader)}, \
+                reg loss: {vaild_batches_loss_reg/len(vaild_dataloader)}, \
+                chm loss: {vaild_batches_loss_chm/len(vaild_dataloader)}")
+        model.train()
 
     # Save the model
     torch.save(model.state_dict(), 'checkpoints/hegn.pth')
@@ -139,7 +179,7 @@ def train():
     model.eval()
 
     # select random batch from the dataset
-    batch = next(iter(dataloader))
+    batch = next(iter(vaild_dataloader))
     x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
     y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
     T = batch['transform'].to(device).to(torch.float32)
@@ -163,9 +203,9 @@ def train():
     print(f"S: {S[0]}")
     # S, R, t = S_gt, R_gt, t_gt.unsqueeze(-1)
     x_aligned = torch.matmul(R, S @ x_par) + t
+    # x_aligned = torch.matmul(T[:, :3, :3], x_par) + T[:, :3, 3].unsqueeze(-1)
     print(f"x_aligned: {x_aligned.size()}")
     print(f"loss: {criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)}")
-    # print(f"loss: {criterion(R, t, S, R_gt, t_gt, S_gt)}")
     # visualize the point clouds
     pcd1 = o3d.geometry.PointCloud()
     pcd2 = o3d.geometry.PointCloud()

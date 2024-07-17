@@ -44,7 +44,7 @@ class VNLinearLeakyReLU(nn.Module):
         self.negative_slope = negative_slope
         
         self.map_to_feat = nn.Linear(in_channels, out_channels, bias=False)
-        self.batchnorm = VNBatchNorm(out_channels, dim=dim)
+        # self.batchnorm = VNBatchNorm(out_channels, dim=dim)
         
         if share_nonlinearity == True:
             self.map_to_dir = nn.Linear(in_channels, 1, bias=False)
@@ -57,7 +57,7 @@ class VNLinearLeakyReLU(nn.Module):
         '''
         # Linear
         p = self.map_to_feat(x.transpose(1,-1)).transpose(1,-1)
-        # BatchNorm
+        # BatchNorm NOT USED
         # p = self.batchnorm(p)
         # LeakyReLU
         d = self.map_to_dir(x.transpose(1,-1)).transpose(1,-1)

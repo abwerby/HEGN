@@ -198,14 +198,22 @@ class RandomTransformSE3:
 
         # Generate translation
         rand_trans = np.random.uniform(-trans_mag, trans_mag, 3)
-        rand_SE3 = np.concatenate((rand_rot, rand_trans[:, None]), axis=1).astype(np.float32)
 
         # Generate scale
         if self._scale_range is not None:
             scale = np.random.uniform(self._scale_range[0], self._scale_range[1], 3)
             scale_matrix = np.eye(3)
             np.fill_diagonal(scale_matrix, scale)
-            rand_SE3 = np.concatenate((rand_SE3[:, :3] @ scale_matrix, rand_SE3[:, 3:4]), axis=1)
+        else:
+            scale_matrix = np.eye(3)
+
+        # construct SE3 matrix
+        rand_SE3 = np.eye(4)
+        if self._scale_range is not None:
+            rand_SE3[:3, :3] = rand_rot @ scale_matrix
+        else:
+            rand_SE3[:3, :3] = rand_rot
+        rand_SE3[:3 ,3] = rand_trans
 
         return rand_SE3, rand_rot, rand_trans, scale_matrix
 

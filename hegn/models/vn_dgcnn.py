@@ -14,7 +14,6 @@ class VNDGCNN(nn.Module):
         self.n_knn = k
         self.in_feat = in_feat
         self.conv1 = VNLinearLeakyReLU(in_feat, out_feat)
-        # self.conv2 = VNLinearLeakyReLU(out_feat, out_feat)
 
         if pooling == 'max':
             self.pool = VNMaxPool(self.in_feat)
