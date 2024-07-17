@@ -49,7 +49,8 @@ def train():
     vaild_dataloader = DataLoader(vaild_dataset, batch_size=batch_size, shuffle=True)
     
     # select only 10% of the dataset
-    # dataloader = DataLoader(dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.1*len(dataset)))))
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.1*len(train_dataset)))))
+    
     class Args:
         def __init__(self):
             self.device = 'cuda'
@@ -98,7 +99,8 @@ def train():
         batches_loss = 0
         batches_loss_reg = 0
         batches_loss_chm = 0
-        for batch_idx, batch in enumerate(tqdm(train_dataloader)):
+        model.train()
+        for batch_idx, batch in enumerate(tqdm(train_dataloader, desc=f'Epoch {epoch}, training', leave=False)):
             x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
             y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
             t_gt = batch['T'].to(device).to(torch.float32)
@@ -124,14 +126,13 @@ def train():
             batches_loss_chm += loss_chm.item()
             loss.backward()
             optimizer.step()
-            logging.disable(logging.NOTSET)
         # Validation loop
         model.eval()
         with torch.no_grad():
             vaild_batches_loss = 0
             vaild_batches_loss_reg = 0
             vaild_batches_loss_chm = 0
-            for batch_idx, batch in enumerate(vaild_dataloader):
+            for batch_idx, batch in enumerate(tqdm(vaild_dataloader, desc=f'Epoch {epoch}, validation', leave=False)):
                 x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
                 y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
                 t_gt = batch['T'].to(device).to(torch.float32)
@@ -159,14 +160,14 @@ def train():
                 "reg vaild loss": vaild_batches_loss_reg/len(vaild_dataloader),
                 "chm vaild loss": vaild_batches_loss_chm/len(vaild_dataloader)
                 })
+        logging.disable(logging.NOTSET)
         logging.info(f"epoch {epoch} loss: {batches_loss/len(train_dataloader)}, \
-                reg loss: {batches_loss_reg/len(train_dataloader)}, \
-                chm loss: {batches_loss_chm/len(train_dataloader)} \
-                vaild loss: {vaild_batches_loss/len(vaild_dataloader)}, \
-                reg loss: {vaild_batches_loss_reg/len(vaild_dataloader)}, \
-                chm loss: {vaild_batches_loss_chm/len(vaild_dataloader)}")
-        model.train()
-
+            reg loss: {batches_loss_reg/len(train_dataloader)}, \
+            chm loss: {batches_loss_chm/len(train_dataloader)}")
+        logging.info(f"epoch {epoch} vaild loss: {vaild_batches_loss/len(vaild_dataloader)}, \
+            reg loss: {vaild_batches_loss_reg/len(vaild_dataloader)}, \
+            chm loss: {vaild_batches_loss_chm/len(vaild_dataloader)}")
+        logging.disable(logging.ERROR)
     # Save the model
     torch.save(model.state_dict(), 'checkpoints/hegn.pth')
     wandb.finish()
