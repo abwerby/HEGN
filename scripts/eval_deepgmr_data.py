@@ -1,9 +1,10 @@
 import torch
-from torch.utils.data import DataLoader
-
+from torch.utils.data import DataLoader, Dataset
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from torchvision.transforms import Compose
+from sklearn.model_selection import train_test_split
 
 import open3d as o3d
 
@@ -15,43 +16,24 @@ import h5py
 # add current directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from utils.eval_utils import RMSE, to_h5
+from hegn.utils.vn_dgcnn_util import get_graph_feature
 from hegn.models.hegn import HEGN, HEGN_Loss
-from hegn.dataloader.dataloader import ModelNetHdf
-from hegn.dataloader.transforms import (
-                        Resampler,
-                        FixedResampler,
-                        RandomJitter,
-                        RandomCrop,
-                        RandomTransformSE3
-                    )
+from utils.eval_utils import DeepGMRDataSet, RMSE
+
 
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 batch_size = 32
 
-# Create dataset and dataloader
-transform = Compose([
-    Resampler(1024),
-    RandomJitter(scale=0.01, clip=0.05),
-    RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
-    # RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=None),
-])
-torch.cuda.memory._record_memory_history(True)
+deepgmrdataset = DeepGMRDataSet('/export/home/werbya/dll/deepgmr/data/test/modelnet_noisy.h5')
+dataloader = DataLoader(deepgmrdataset, batch_size=batch_size, shuffle=True)
 
-dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048',
-                      subset='test', transform=transform)
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-# write the dataset to an h5 file to test DeepGMR 
-to_h5(dataset, 'data/test.h5')
-print('Dataset written to test.h5')
 # make sure that args are the same as in the training script
 class Args:
     def __init__(self):
         self.device = 'cuda'
         self.vngcnn_in =  [2, 64, 64, 128]
-        self.vngcnn_out = [32, 32, 64, 32]
+        self.vngcnn_out = [32, 32, 64, 128]
         self.n_knn = [20, 20, 16, 16]
         self.topk = [4, 4, 2, 2]
         self.num_blocks = len(self.vngcnn_in)
@@ -65,7 +47,8 @@ criterion = HEGN_Loss()
 
 # Load the model from the checkpoint
 model = HEGN(args=args).to(device)
-model.load_state_dict(torch.load('checkpoints/hegn_100e_nobatch.pth'))
+# model.load_state_dict(torch.load('checkpoints/hegn_100e_nobatch.pth'))
+model.load_state_dict(torch.load('checkpoints/hegn_100e_512.pth'))
 model.eval()
 
 
@@ -77,13 +60,12 @@ with torch.no_grad():
     RMSE_loss = 0.0
     time_per_batch = []
     for i, batch in enumerate(dataloader):
-        x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
-        y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
-        t_gt = batch['T'].to(device).to(torch.float32)
-        R_gt = batch['R'].to(device).to(torch.float32)
-        S_gt = batch['S'].to(device).to(torch.float32)
-        transform_gt = batch['transform'].to(device).to(torch.float32)
-        # S_gt = torch.diag_embed(batch['transform'][:, :3, :3].det()).to(device).to(torch.float32)
+        x = batch[0].transpose(2, 1).to(device).to(torch.float32)
+        y = batch[1].transpose(2, 1).to(device).to(torch.float32)
+        transform_gt = batch[2].to(device).to(torch.float32)
+        t_gt = transform_gt[:, :3, 3]
+        R_gt = transform_gt[:, :3, :3]
+        S_gt = torch.eye(3).to(device).to(torch.float32).unsqueeze(0).repeat(x.size(0), 1, 1)
         curr_batch_size = x.size(0)
         # find centroids of both x and y
         x_centroid = x.mean(dim=2, keepdim=True)
@@ -94,9 +76,22 @@ with torch.no_grad():
         start_time = time.time()
         R, S = model(x_par, y_par)
         t = y_centroid - torch.matmul(R, x_centroid)
-        S = torch.diag_embed(S)
+        # S = torch.diag_embed(S)
+        S = S_gt
         x_aligned = torch.matmul(R, S @ x_par) + t
         end_time = time.time()
+        # show the point cloud original and transformed
+        pc = o3d.geometry.PointCloud()
+        pc1 = o3d.geometry.PointCloud()
+        pc1.points = o3d.utility.Vector3dVector(y[0].cpu().numpy().T)
+        pc.points = o3d.utility.Vector3dVector(x_aligned[0].cpu().numpy().T)
+        pc1.paint_uniform_color([0, 0, 1])
+        pc.paint_uniform_color([1, 0, 0])
+        out_folder = 'output'
+        if not os.path.exists(out_folder):
+            os.makedirs(out_folder)
+        o3d.io.write_point_cloud(f'{out_folder}/pc_{i}.ply', pc+pc1)
+        
         if curr_batch_size == batch_size:
             time_per_batch.append(end_time - start_time)
         loss, loss_reg, loss_chm = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
