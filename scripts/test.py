@@ -32,7 +32,7 @@ batch_size = 32
 
 # Create dataset and dataloader
 transform = Compose([
-    Resampler(1024),
+    Resampler(1024, resample_both=True),
     RandomJitter(scale=0.01, clip=0.05),
     RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
     # RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=None),

@@ -27,7 +27,7 @@ class SplitSourceRef:
 
 
 class Resampler:
-    def __init__(self, num: int):
+    def __init__(self, num: int, resample_both: bool = False):
         """Resamples a point cloud containing N points to one containing M
 
         Guaranteed to have no repeated points if M <= N.
@@ -37,15 +37,19 @@ class Resampler:
             num (int): Number of points to resample to, i.e. M
 
         """
+        self.resample_both = resample_both
         self.num = num
 
     def __call__(self, sample):
 
-        if 'deterministic' in sample and sample['deterministic']:
-            np.random.seed(sample['idx'])
+        # if 'deterministic' in sample and sample['deterministic']:
+        #     np.random.seed(sample['idx'])
 
         if 'points' in sample:
             sample['points'] = self._resample(sample['points'], self.num)
+        elif 'points' in sample and self.resample_both:
+            sample['points'] = self._resample(sample['points'], self.num)
+            sample['points_ts'] = self._resample(sample['points_ts'], self.num)
         else:
             if 'crop_proportion' not in sample:
                 src_size, ref_size = self.num, self.num
@@ -238,7 +242,14 @@ class RandomTransformSE3:
         if 'deterministic' in sample and sample['deterministic']:
             np.random.seed(sample['idx'])
 
-        if 'points' in sample:
+        if 'points_ts' in sample:
+            sample['points_ts'], gt, igt, R, T, S = self.transform(sample['points_ts'])
+            sample['transform'] = igt
+            sample['transform_gt'] = gt
+            sample['R'] = R
+            sample['T'] = T
+            sample['S'] = S
+        elif 'points' in sample:
             sample['points_ts'], gt, igt, R, T, S = self.transform(sample['points'])
             sample['transform'] = igt
             sample['transform_gt'] = gt
