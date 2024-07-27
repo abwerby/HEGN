@@ -6,4 +6,5 @@
 *.pyc
 /data
 /wandb
+/output*
 *__pycache__

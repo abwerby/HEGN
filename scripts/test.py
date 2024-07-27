@@ -34,17 +34,19 @@ batch_size = 32
 transform = Compose([
     Resampler(1024, resample_both=True),
     RandomJitter(scale=0.01, clip=0.05),
-    RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
-    # RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=None),
+    # RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
+    RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=None),
 ])
 torch.cuda.memory._record_memory_history(True)
 
 dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048',
                       subset='test', transform=transform)
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+# use only 50% of the dataset
+# dataloader = DataLoader(dataset, batch_size=batch_size, sampler=torch.utils.data.sampler.SubsetRandomSampler(range(0, len(dataset), 2)))
 
 # write the dataset to an h5 file to test DeepGMR 
-to_h5(dataset, 'data/test.h5')
+to_h5(dataset, 'data/test_9dof.h5')
 print('Dataset written to test.h5')
 # make sure that args are the same as in the training script
 class Args:
@@ -75,6 +77,7 @@ with torch.no_grad():
     running_loss_reg = 0.0
     running_loss_chm = 0.0
     RMSE_loss = 0.0
+    CHM_loss = 0.0
     time_per_batch = []
     for i, batch in enumerate(dataloader):
         x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
@@ -94,12 +97,30 @@ with torch.no_grad():
         start_time = time.time()
         R, S = model(x_par, y_par)
         t = y_centroid - torch.matmul(R, x_centroid)
-        S = torch.diag_embed(S)
-        x_aligned = torch.matmul(R, S @ x_par) + t
+        # S = torch.diag_embed(S)
+        S = S_gt
+        x_aligned = torch.matmul(R, S @ x) + t
+        x_aligned_gt = torch.matmul(R_gt, S_gt @ x) + t_gt.unsqueeze(-1)
         end_time = time.time()
+        # save the point cloud original and transformed
+        pc = o3d.geometry.PointCloud()
+        pc1 = o3d.geometry.PointCloud()
+        pc1.points = o3d.utility.Vector3dVector(y[0].cpu().numpy().T)
+        pc.points = o3d.utility.Vector3dVector(x_aligned[0].cpu().numpy().T)
+        pc1.paint_uniform_color([0, 0, 1])
+        pc.paint_uniform_color([1, 0, 0])
+        before_folder = 'output_HEGN_data/before'
+        after_folder = 'output_HEGN_data/after'
+        if not os.path.exists(before_folder):
+            os.makedirs(before_folder)
+        if not os.path.exists(after_folder):
+            os.makedirs(after_folder)
+        o3d.io.write_point_cloud(f'{after_folder}/pc_{i}.ply', pc1+pc)
+        pc.points = o3d.utility.Vector3dVector(x[0].cpu().numpy().T)
+        o3d.io.write_point_cloud(f'{before_folder}/pc_{i}.ply', pc1+pc)
         if curr_batch_size == batch_size:
             time_per_batch.append(end_time - start_time)
-        loss, loss_reg, loss_chm = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
+        loss, loss_reg, loss_chm = criterion(x_aligned, x_aligned_gt, R, S, t, R_gt, S_gt, t_gt)
         # calculate RMSE
         RMSE_loss += RMSE(x_par, R, S, t, R_gt, S_gt, t_gt)
         running_loss += loss.item()

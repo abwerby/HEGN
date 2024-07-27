@@ -8,9 +8,9 @@ class DeepGMRDataSet(Dataset):
     def __init__(self, path):
         super(DeepGMRDataSet, self).__init__()
         with h5py.File(path, 'r') as f:
-            self.source = f['source'][...]
-            self.target = f['target'][...]
-            self.transform = f['transform'][...]
+            self.source = np.array(f['source'])
+            self.target = np.array(f['target'])
+            self.transform = np.array(f['transform'])
         print(self.source.shape, self.target.shape, self.transform.shape)
         self.n_points = 1024
 
@@ -61,7 +61,7 @@ def RMSE(x, R, S, t, R_gt, S_gt, t_gt):
         Compute the root mean squared error between predicted and ground truth transformation
         on the same point cloud
     """
-    x_aligned = torch.matmul(R, S @ x) + t
-    x_gt_aligned = torch.matmul(R_gt, S_gt @ x) + t_gt.unsqueeze(-1)
-    rmse =  torch.norm(x_aligned - x_gt_aligned, dim=1).mean(dim=1)
+    x_aligned = torch.matmul(R, S @ x) + t # Shape: [B, 3, N]
+    x_gt_aligned = torch.matmul(R_gt, S_gt @ x) + t_gt.unsqueeze(-1) # Shape: [B, 3, N]
+    rmse =  torch.norm(x_aligned - x_gt_aligned, dim=1).mean(dim=1) # Shape: [B]
     return rmse.mean()

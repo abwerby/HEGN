@@ -24,8 +24,8 @@ from utils.eval_utils import DeepGMRDataSet, RMSE
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 batch_size = 32
-
-deepgmrdataset = DeepGMRDataSet('/export/home/werbya/dll/deepgmr/data/test/modelnet_noisy.h5')
+deepgmrdataset = DeepGMRDataSet('/export/home/werbya/dll/deepgmr/data/test/modelnet_unseen.h5')
+print(len(deepgmrdataset))
 dataloader = DataLoader(deepgmrdataset, batch_size=batch_size, shuffle=True)
 
 # make sure that args are the same as in the training script
@@ -33,7 +33,7 @@ class Args:
     def __init__(self):
         self.device = 'cuda'
         self.vngcnn_in =  [2, 64, 64, 128]
-        self.vngcnn_out = [32, 32, 64, 128]
+        self.vngcnn_out = [32, 32, 64, 32]
         self.n_knn = [20, 20, 16, 16]
         self.topk = [4, 4, 2, 2]
         self.num_blocks = len(self.vngcnn_in)
@@ -47,8 +47,8 @@ criterion = HEGN_Loss()
 
 # Load the model from the checkpoint
 model = HEGN(args=args).to(device)
-# model.load_state_dict(torch.load('checkpoints/hegn_100e_nobatch.pth'))
-model.load_state_dict(torch.load('checkpoints/hegn_100e_512.pth'))
+model.load_state_dict(torch.load('checkpoints/hegn_100e_nobatch.pth'))
+# model.load_state_dict(torch.load('checkpoints/hegn_100e_512.pth'))
 model.eval()
 
 
@@ -75,10 +75,11 @@ with torch.no_grad():
         # stop the logging
         start_time = time.time()
         R, S = model(x_par, y_par)
-        t = y_centroid - torch.matmul(R, x_centroid)
-        # S = torch.diag_embed(S)
+        # R = R_gt
         S = S_gt
-        x_aligned = torch.matmul(R, S @ x_par) + t
+        t = y_centroid - torch.matmul(R, x_centroid)
+        x_aligned = torch.matmul(R, S @ x) + t
+        x_aligned_gt = torch.matmul(R_gt, S_gt @ x) + t_gt.unsqueeze(-1)
         end_time = time.time()
         # show the point cloud original and transformed
         pc = o3d.geometry.PointCloud()
@@ -87,14 +88,19 @@ with torch.no_grad():
         pc.points = o3d.utility.Vector3dVector(x_aligned[0].cpu().numpy().T)
         pc1.paint_uniform_color([0, 0, 1])
         pc.paint_uniform_color([1, 0, 0])
-        out_folder = 'output'
-        if not os.path.exists(out_folder):
-            os.makedirs(out_folder)
-        o3d.io.write_point_cloud(f'{out_folder}/pc_{i}.ply', pc+pc1)
+        before_folder = 'output_DeepGMR_data/before'
+        after_folder = 'output_DeepGMR_data/after'
+        if not os.path.exists(before_folder):
+            os.makedirs(before_folder)
+        if not os.path.exists(after_folder):
+            os.makedirs(after_folder)
+        o3d.io.write_point_cloud(f'{after_folder}/pc_{i}.ply', pc1+pc)
+        pc.points = o3d.utility.Vector3dVector(x[0].cpu().numpy().T)
+        o3d.io.write_point_cloud(f'{before_folder}/pc_{i}.ply', pc1+pc)
         
         if curr_batch_size == batch_size:
             time_per_batch.append(end_time - start_time)
-        loss, loss_reg, loss_chm = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
+        loss, loss_reg, loss_chm = criterion(x_aligned, x_aligned_gt, R, S, t, R_gt, S_gt, t_gt)
         # calculate RMSE
         RMSE_loss += RMSE(x_par, R, S, t, R_gt, S_gt, t_gt)
         running_loss += loss.item()
