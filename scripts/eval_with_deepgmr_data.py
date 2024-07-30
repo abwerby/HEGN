@@ -24,9 +24,11 @@ from utils.eval_utils import DeepGMRDataSet, RMSE
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 batch_size = 32
-deepgmrdataset = DeepGMRDataSet('/export/home/werbya/dll/deepgmr/data/test/modelnet_unseen.h5')
+# deepgmrdataset = DeepGMRDataSet('/export/home/werbya/dll/deepgmr/data/test/modelnet_noisy.h5')
+deepgmrdataset = DeepGMRDataSet('/export/home/werbya/dll/HEGN/data/test_6dof.h5')
+
 print(len(deepgmrdataset))
-dataloader = DataLoader(deepgmrdataset, batch_size=batch_size, shuffle=True)
+dataloader = DataLoader(deepgmrdataset, batch_size=batch_size, shuffle=False)
 
 # make sure that args are the same as in the training script
 class Args:
@@ -60,8 +62,8 @@ with torch.no_grad():
     RMSE_loss = 0.0
     time_per_batch = []
     for i, batch in enumerate(dataloader):
-        x = batch[0].transpose(2, 1).to(device).to(torch.float32)
-        y = batch[1].transpose(2, 1).to(device).to(torch.float32)
+        x = batch[0][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
+        y = batch[1][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
         transform_gt = batch[2].to(device).to(torch.float32)
         t_gt = transform_gt[:, :3, 3]
         R_gt = transform_gt[:, :3, :3]
@@ -84,8 +86,8 @@ with torch.no_grad():
         # show the point cloud original and transformed
         pc = o3d.geometry.PointCloud()
         pc1 = o3d.geometry.PointCloud()
-        pc1.points = o3d.utility.Vector3dVector(y[0].cpu().numpy().T)
-        pc.points = o3d.utility.Vector3dVector(x_aligned[0].cpu().numpy().T)
+        pc1.points = o3d.utility.Vector3dVector(x_aligned[0].cpu().numpy().T)
+        pc.points = o3d.utility.Vector3dVector(y[0].cpu().numpy().T)
         pc1.paint_uniform_color([0, 0, 1])
         pc.paint_uniform_color([1, 0, 0])
         before_folder = 'output_DeepGMR_data/before'
@@ -102,7 +104,7 @@ with torch.no_grad():
             time_per_batch.append(end_time - start_time)
         loss, loss_reg, loss_chm = criterion(x_aligned, x_aligned_gt, R, S, t, R_gt, S_gt, t_gt)
         # calculate RMSE
-        RMSE_loss += RMSE(x_par, R, S, t, R_gt, S_gt, t_gt)
+        RMSE_loss += RMSE(x, R, S, t, R_gt, S_gt, t_gt)
         running_loss += loss.item()
         running_loss_reg += loss_reg.item()
         running_loss_chm += loss_chm.item()

@@ -28,14 +28,14 @@ from hegn.dataloader.transforms import (
 
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-batch_size = 32
+batch_size = 128
 
 # Create dataset and dataloader
 transform = Compose([
     Resampler(1024, resample_both=True),
     RandomJitter(scale=0.01, clip=0.05),
-    # RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
-    RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=None),
+    RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
+    # RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=None),
 ])
 torch.cuda.memory._record_memory_history(True)
 
@@ -44,10 +44,9 @@ dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048',
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 # use only 50% of the dataset
 # dataloader = DataLoader(dataset, batch_size=batch_size, sampler=torch.utils.data.sampler.SubsetRandomSampler(range(0, len(dataset), 2)))
-
 # write the dataset to an h5 file to test DeepGMR 
 to_h5(dataset, 'data/test_9dof.h5')
-print('Dataset written to test.h5')
+
 # make sure that args are the same as in the training script
 class Args:
     def __init__(self):
@@ -59,11 +58,9 @@ class Args:
         self.num_blocks = len(self.vngcnn_in)
         
 args = Args()
-model = HEGN(args=args).to(device)
 
 # Define loss function and optimizer
 criterion = HEGN_Loss()
-
 
 # Load the model from the checkpoint
 model = HEGN(args=args).to(device)
@@ -86,7 +83,6 @@ with torch.no_grad():
         R_gt = batch['R'].to(device).to(torch.float32)
         S_gt = batch['S'].to(device).to(torch.float32)
         transform_gt = batch['transform'].to(device).to(torch.float32)
-        # S_gt = torch.diag_embed(batch['transform'][:, :3, :3].det()).to(device).to(torch.float32)
         curr_batch_size = x.size(0)
         # find centroids of both x and y
         x_centroid = x.mean(dim=2, keepdim=True)
@@ -97,8 +93,9 @@ with torch.no_grad():
         start_time = time.time()
         R, S = model(x_par, y_par)
         t = y_centroid - torch.matmul(R, x_centroid)
-        # S = torch.diag_embed(S)
-        S = S_gt
+        S = torch.diag_embed(S)
+        # uncomment the following line to if you want to test only 6dof
+        # S = S_gt
         x_aligned = torch.matmul(R, S @ x) + t
         x_aligned_gt = torch.matmul(R_gt, S_gt @ x) + t_gt.unsqueeze(-1)
         end_time = time.time()
