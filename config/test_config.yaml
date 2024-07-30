@@ -1,0 +1,12 @@
+batch_size: 32
+registration_mode: '9dof' # '6dof' or '9dof'
+export_h5: False
+rotational_magnitude: 180 # max rotation in degrees
+translational_magnitude: 0.5 # max translation in meters
+scale_range: [0.5, 1.5] # range of scaling factors
+jitter_scale: 0.01 # jitter scale factor
+jitter_clip: 0.05 # jitter clip factor
+save_output: False
+save_output_dir: 'output'
+dataset_path: '/export/home/werbya/dll/HEGN/data/modelnet40_ply_hdf5_2048'
+checkpoint_path: '/export/home/werbya/dll/HEGN/checkpoints/hegn_100e_nobatch.pth'

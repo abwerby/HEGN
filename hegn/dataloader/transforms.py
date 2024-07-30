@@ -119,9 +119,8 @@ class RandomJitter:
 
         if 'points' in sample:
             sample['points'] = self.jitter(sample['points'])
-        else:
-            sample['points_src'] = self.jitter(sample['points_src'])
-            sample['points_ref'] = self.jitter(sample['points_ref'])
+        if 'points_ts' in sample:
+            sample['points_ts'] = self.jitter(sample['points_ts'])
 
         return sample
 
