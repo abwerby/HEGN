@@ -63,4 +63,4 @@ Given its wide application in robotics, point cloud registration is a widely res
 ## 👩‍⚖️  License
 
 For academic usage, the code is released under the [MIT](https://opensource.org/licenses/MIT) license.
-For any commercial purpose, please contact the authors. 
+For any commercial purpose, please contact the authors.
