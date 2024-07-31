@@ -2,13 +2,11 @@ import torch
 from torch.utils.data import DataLoader
 
 import torch.nn as nn
-import torch.optim as optim
 from torchvision.transforms import Compose
 
 import open3d as o3d
-
 import time
-import logging
+import tqdm
 import os
 import sys
 from omegaconf import DictConfig, OmegaConf
@@ -16,15 +14,12 @@ import hydra
 
 # add current directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
 from utils.eval_utils import RMSE, to_h5
 from hegn.models.hegn import HEGN, HEGN_Loss
 from hegn.dataloader.dataloader import ModelNetHdf
 from hegn.dataloader.transforms import (
-                        Resampler,
                         FixedResampler,
                         RandomJitter,
-                        RandomCrop,
                         RandomTransformSE3
                     )
 
@@ -35,12 +30,6 @@ def main(cfg: DictConfig):
     batch_size = cfg.batch_size
 
     # Create dataset and dataloader
-    # transform = Compose([
-    #     Resampler(1024, resample_both=True),
-    #     RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
-    #     # RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=None), # for 6DOF
-    #     RandomJitter(scale=0.01, clip=0.05),
-    # ])
     transform = Compose([
         FixedResampler(1024),
         RandomTransformSE3(rot_mag=cfg.rotational_magnitude,
@@ -98,9 +87,8 @@ def main(cfg: DictConfig):
         running_loss_reg = 0.0
         running_loss_chm = 0.0
         RMSE_loss = 0.0
-        CHM_loss = 0.0
         time_per_batch = []
-        for i, batch in enumerate(dataloader):
+        for i, batch in enumerate(tqdm.tqdm(dataloader)):
             x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
             y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
             t_gt = batch['T'].to(device).to(torch.float32)
