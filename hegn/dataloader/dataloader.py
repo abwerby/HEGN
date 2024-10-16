@@ -11,8 +11,6 @@ from torchvision.transforms import Compose
 import open3d as o3d
 
 import sys
-# add pervious directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from hegn.dataloader.transforms import (
                         Resampler,
                         FixedResampler,

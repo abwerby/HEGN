@@ -30,12 +30,13 @@ def train():
     # Define hyperparameters
     learning_rate = 1e-3
     batch_size = 32
-    num_epochs = 100
+    num_epochs = 60
     optimizer_name = 'adam'
+    vaildation_rate = 10
 
     # Create dataset and dataloader
     transform = Compose([
-        Resampler(1024, resample_both=False),
+        Resampler(1024, resample_both=True),
         RandomJitter(scale=0.01, clip=0.05),
         RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
     ])
@@ -45,12 +46,12 @@ def train():
     # split the dataset into train and vaild
     train_dataset, vaild_dataset = train_test_split(dataset, test_size=0.2) 
     
-    # train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    # vaild_dataloader = DataLoader(vaild_dataset, batch_size=batch_size, shuffle=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    vaild_dataloader = DataLoader(vaild_dataset, batch_size=batch_size, shuffle=True)
     
     # select only 10% of the dataset
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.1*len(train_dataset)))))
-    vaild_dataloader = DataLoader(vaild_dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.1*len(vaild_dataset)))))
+    # train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.1*len(train_dataset)))))
+    # vaild_dataloader = DataLoader(vaild_dataset, batch_size=batch_size, sampler=torch.utils.data.SubsetRandomSampler(range(0, int(0.1*len(vaild_dataset)))))
     
     class Args:
         def __init__(self):
@@ -131,30 +132,31 @@ def train():
         logging.info(f"memory allocated: {torch.cuda.memory_allocated()/1e9}")
         logging.info(f"memory cached: {torch.cuda.memory_reserved()/1e9}")
         # Validation loop
-        model.eval()
-        with torch.no_grad():
-            vaild_batches_loss = 0
-            vaild_batches_loss_reg = 0
-            vaild_batches_loss_chm = 0
-            for batch_idx, batch in enumerate(tqdm(vaild_dataloader, desc=f'Epoch {epoch}, validation', leave=False)):
-                x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
-                y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
-                t_gt = batch['T'].to(device).to(torch.float32)
-                R_gt = batch['R'].to(device).to(torch.float32)
-                S_gt = batch['S'].to(device).to(torch.float32)
-                # find centroids of both x and y
-                x_centroid = x.mean(dim=2, keepdim=True)
-                y_centroid = y.mean(dim=2, keepdim=True)
-                x_par = x - x_centroid
-                y_par = y - y_centroid
-                R, S = model(x_par, y_par)
-                t = y_centroid - torch.matmul(R, x_centroid)
-                S = torch.diag_embed(S)
-                x_aligned = torch.matmul(R, S @ x_par) + t
-                loss, loss_reg, loss_chm = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
-                vaild_batches_loss += loss.item()
-                vaild_batches_loss_reg += loss_reg.item()
-                vaild_batches_loss_chm += loss_chm.item()
+        if epoch % vaildation_rate == 0:
+            model.eval()
+            with torch.no_grad():
+                vaild_batches_loss = 0
+                vaild_batches_loss_reg = 0
+                vaild_batches_loss_chm = 0
+                for batch_idx, batch in enumerate(tqdm(vaild_dataloader, desc=f'Epoch {epoch}, validation', leave=False)):
+                    x = batch['points'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
+                    y = batch['points_ts'][:,:,:3].transpose(2, 1).to(device).to(torch.float32)
+                    t_gt = batch['T'].to(device).to(torch.float32)
+                    R_gt = batch['R'].to(device).to(torch.float32)
+                    S_gt = batch['S'].to(device).to(torch.float32)
+                    # find centroids of both x and y
+                    x_centroid = x.mean(dim=2, keepdim=True)
+                    y_centroid = y.mean(dim=2, keepdim=True)
+                    x_par = x - x_centroid
+                    y_par = y - y_centroid
+                    R, S = model(x_par, y_par)
+                    t = y_centroid - torch.matmul(R, x_centroid)
+                    S = torch.diag_embed(S)
+                    x_aligned = torch.matmul(R, S @ x_par) + t
+                    loss, loss_reg, loss_chm = criterion(x_aligned, y, R, S, t, R_gt, S_gt, t_gt)
+                    vaild_batches_loss += loss.item()
+                    vaild_batches_loss_reg += loss_reg.item()
+                    vaild_batches_loss_chm += loss_chm.item()
         wandb.log({
                 "epoch": epoch,
                 "epoch train loss": batches_loss/len(train_dataloader),
@@ -172,6 +174,9 @@ def train():
             chm loss: {vaild_batches_loss_chm/len(vaild_dataloader)}")
         logging.disable(logging.ERROR)
     # Save the model
+    # create a directory for the checkpoints
+    if not os.path.exists('checkpoints'):
+        os.makedirs('checkpoints')
     torch.save(model.state_dict(), 'checkpoints/hegn.pth')
     wandb.finish()
 
@@ -179,7 +184,7 @@ def train():
     ## TESTING on one sample with visualization ##
     # Load the model and test it
     model = HEGN(args=args).to(device)
-    model.load_state_dict(torch.load('checkpoints/hegn_100e_nobatch.pth'))
+    model.load_state_dict(torch.load('checkpoints/hegn.pth'))
     model.eval()
 
     # select random batch from the dataset

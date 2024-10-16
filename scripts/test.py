@@ -19,6 +19,7 @@ from hegn.models.hegn import HEGN, HEGN_Loss
 from hegn.dataloader.dataloader import ModelNetHdf
 from hegn.dataloader.transforms import (
                         FixedResampler,
+                        Resampler,
                         RandomJitter,
                         RandomTransformSE3
                     )
@@ -31,7 +32,7 @@ def main(cfg: DictConfig):
 
     # Create dataset and dataloader
     transform = Compose([
-        FixedResampler(1024),
+        Resampler(1024, resample_both=True),
         RandomTransformSE3(rot_mag=cfg.rotational_magnitude,
                            trans_mag=cfg.translational_magnitude,
                             scale_range=cfg.scale_range) if cfg.registration_mode == '9dof' \
@@ -56,12 +57,11 @@ def main(cfg: DictConfig):
     class Args:
         def __init__(self):
             self.device = 'cuda'
-            self.vngcnn_in =  [2, 64, 64, 128]
-            self.vngcnn_out = [32, 32, 64, 32]
+            self.vngcnn_in =  [2, 64, 64, 64]
+            self.vngcnn_out = [32, 32, 32, 32]
             self.n_knn = [20, 20, 16, 16]
             self.topk = [4, 4, 2, 2]
             self.num_blocks = len(self.vngcnn_in)
-            
     args = Args()
 
     # Define loss function and optimizer

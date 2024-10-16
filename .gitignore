@@ -7,4 +7,8 @@
 /data
 /wandb
 /output*
+/build
+/dist
+/.eggs
+/hegn.egg-info
 *__pycache__
