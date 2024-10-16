@@ -6,9 +6,11 @@ import numpy as np
 from typing import Tuple, Optional
 
 from hegn.models.hegn import HEGN
-from hegn.dataloader.transforms import Resampler, RandomJitter
+from hegn.dataloader.transforms import Resampler, RandomJitter, RandomTransformSE3
+from hegn.dataloader.dataloader import ScanObjetDataLoader, ModelNetHdf
 
-class PointCloudRegistration:
+
+class HEGNRegistration:
     def __init__(self, checkpoint_path: str, device: str = 'cuda'):
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
         
@@ -21,9 +23,9 @@ class PointCloudRegistration:
                 self.n_knn = [20, 20, 16, 16]
                 self.topk = [4, 4, 2, 2]
                 self.num_blocks = len(self.vngcnn_in)
-
-        self.model = HEGN(args=Args()).to(self.device)
-        self.model.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
+        args = Args()
+        self.model = HEGN(args=args).to(self.device)
+        self.model.load_state_dict(torch.load(checkpoint_path))
         self.model.eval()
     
     def _resample(self, points, k):
@@ -46,22 +48,22 @@ class PointCloudRegistration:
             return points[rand_idxs, :]
 
 
-    def preprocess(self, points: np.ndarray, num_points: int = 10000) -> torch.Tensor:
+    def preprocess(self, points: np.ndarray, num_points: int = 1024) -> torch.Tensor:
         """Preprocess the input point cloud."""
         if not isinstance(points, np.ndarray):
             raise TypeError("Input must be a numpy array")
         
         if points.shape[1] != 3:
             raise ValueError("Input must have shape (N, 3)")
+        # sample uniformly to num_points
+        points = self._resample(points, num_points)
         
         # Convert to torch tensor
         points = torch.from_numpy(points).float().to(self.device)
         
-        # sample uniformly to num_points
-        points = self._resample(points, num_points)
-        
         # Transpose to (3, N) as expected by the model
-        return points.transpose(1, 0).unsqueeze(0)
+        points = points.transpose(1, 0).unsqueeze(0)
+        return points
 
     def register(self, source: np.ndarray, target: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -94,7 +96,7 @@ class PointCloudRegistration:
             x_aligned = torch.matmul(R, S @ x) + t
 
             # Convert to numpy arrays
-            aligned_source = x_aligned.squeeze().transpose(1, 0).cpu().numpy()
+            aligned_source = x_aligned.squeeze().cpu().numpy().T
             R = R.squeeze().cpu().numpy()
             S = S.squeeze().cpu().numpy()
             t = t.squeeze().cpu().numpy()
@@ -131,25 +133,55 @@ class PointCloudRegistration:
 # Example usage
 if __name__ == "__main__":
     # Initialize the PointCloudRegistration class
-    pcr = PointCloudRegistration(checkpoint_path="/export/home/werbya/thesis/HEGN/checkpoints/hegn.pth")
+    pcr = HEGNRegistration(checkpoint_path="/export/home/werbya/thesis/HEGN/checkpoints/hegn.pth")
 
     # Load your point clouds (replace with your actual data)
-    source = o3d.io.read_point_cloud("/export/home/werbya/thesis/before.ply")
-    target = o3d.io.read_point_cloud("/export/home/werbya/thesis/after.ply")
+    # source = o3d.io.read_point_cloud("/export/home/werbya/thesis/before.ply")
+    # target = o3d.io.read_point_cloud("/export/home/werbya/thesis/after.ply")
     
     # downsample the point clouds
     # source = source.voxel_down_sample(voxel_size=0.05)
     # target = target.voxel_down_sample(voxel_size=0.05)
     
-    source = np.asarray(source.points)
-    target = np.asarray(target.points)
+    # source = np.asarray(source.points)
+    # target = np.asarray(target.points)
     
+    # load the point clouds from the data loader
+    loader = ScanObjetDataLoader()
+    h5_file = '/export/home/werbya/thesis/HEGN/data/scanobjectnn/main_split/test_objectdataset.h5'
+    h5_data, h5_labels = loader.load_h5(h5_file)
+    num_points = 1024
+    h5_batch_pcs, h5_batch_labels = loader.get_current_data_h5(h5_data, h5_labels, num_points)
+    source = h5_batch_pcs[10]
+    target = h5_batch_pcs[10]
+    
+        
     # apply random translation to the source point cloud
-    t_rand = np.random.uniform(-0.1, 0.1, size=(3,))
-    source += t_rand
+    # t_rand = np.random.uniform(-0.5, 0.5, size=(3,))
+    # source += t_rand
     
+    transform = Compose([
+        RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
+        Resampler(1024),
+        # RandomJitter(scale=0.01, clip=0.05),
+    ])
+
+    pc = dict(points=source, points_ts=target)
+    sample = transform(pc)
+    source = sample['points']
+    target = sample['points_ts']
     
-    
+
+    # dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048', subset='train', categories=['airplane'],
+    #                       transform=transform)
+    # sample = dataset[0]
+    # pcd = o3d.geometry.PointCloud()
+    # pcd1 = o3d.geometry.PointCloud()
+    # pcd1.points = o3d.utility.Vector3dVector(sample['points'][:, :3])
+    # pcd.points = o3d.utility.Vector3dVector(sample['points_ts'][:, :3])
+
+    # source = np.asarray(pcd1.points)
+    # target = np.asarray(pcd.points)
     
     print("Source shape:", source.shape)
     print("Target shape:", target.shape)

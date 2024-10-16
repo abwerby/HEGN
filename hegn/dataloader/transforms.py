@@ -27,7 +27,7 @@ class SplitSourceRef:
 
 
 class Resampler:
-    def __init__(self, num: int, resample_both: bool = False):
+    def __init__(self, num: int):
         """Resamples a point cloud containing N points to one containing M
 
         Guaranteed to have no repeated points if M <= N.
@@ -37,34 +37,15 @@ class Resampler:
             num (int): Number of points to resample to, i.e. M
 
         """
-        self.resample_both = resample_both
         self.num = num
 
     def __call__(self, sample):
 
-        # if 'deterministic' in sample and sample['deterministic']:
-        #     np.random.seed(sample['idx'])
-
-        if 'points' in sample:
-            sample['points'] = self._resample(sample['points'], self.num)
-        elif 'points' in sample and self.resample_both:
+        if 'points' in sample and 'points_ts' in sample:
             sample['points'] = self._resample(sample['points'], self.num)
             sample['points_ts'] = self._resample(sample['points_ts'], self.num)
         else:
-            if 'crop_proportion' not in sample:
-                src_size, ref_size = self.num, self.num
-            elif len(sample['crop_proportion']) == 1:
-                src_size = math.ceil(sample['crop_proportion'][0] * self.num)
-                ref_size = self.num
-            elif len(sample['crop_proportion']) == 2:
-                src_size = math.ceil(sample['crop_proportion'][0] * self.num)
-                ref_size = math.ceil(sample['crop_proportion'][1] * self.num)
-            else:
-                raise ValueError('Crop proportion must have 1 or 2 elements')
-
-            sample['points_src'] = self._resample(sample['points_src'], src_size)
-            sample['points_ref'] = self._resample(sample['points_ref'], ref_size)
-
+            sample['points'] = self._resample(sample['points'], self.num)
         return sample
 
     @staticmethod

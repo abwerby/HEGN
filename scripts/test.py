@@ -32,7 +32,6 @@ def main(cfg: DictConfig):
 
     # Create dataset and dataloader
     transform = Compose([
-        Resampler(1024, resample_both=True),
         RandomTransformSE3(rot_mag=cfg.rotational_magnitude,
                            trans_mag=cfg.translational_magnitude,
                             scale_range=cfg.scale_range) if cfg.registration_mode == '9dof' \
@@ -40,6 +39,7 @@ def main(cfg: DictConfig):
                                 trans_mag=cfg.translational_magnitude,
                                 scale_range=None),
         RandomJitter(scale=cfg.jitter_scale, clip=cfg.jitter_clip) if cfg.jitter_scale > 0 else nn.Identity(),
+        Resampler(1024),
     ])
                            
 

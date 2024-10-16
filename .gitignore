@@ -11,4 +11,5 @@
 /dist
 /.eggs
 /hegn.egg-info
+/.vscode
 *__pycache__

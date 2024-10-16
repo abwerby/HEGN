@@ -11,8 +11,6 @@ import logging
 from tqdm import tqdm
 import os
 import sys
-# add current directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 import wandb
 from hegn.models.hegn import HEGN, HEGN_Loss
@@ -30,15 +28,15 @@ def train():
     # Define hyperparameters
     learning_rate = 1e-3
     batch_size = 32
-    num_epochs = 60
+    num_epochs = 100
     optimizer_name = 'adam'
     vaildation_rate = 10
 
     # Create dataset and dataloader
     transform = Compose([
-        Resampler(1024, resample_both=True),
-        RandomJitter(scale=0.01, clip=0.05),
         RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
+        Resampler(1024),
+        RandomJitter(scale=0.01, clip=0.05),
     ])
 
     dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048',
