@@ -125,7 +125,7 @@ class HEGNRegistration:
         if aligned_source is not None:
             aligned_pcd = create_point_cloud(aligned_source, [0, 0, 1])  # Blue
             # o3d.visualization.draw_geometries([source_pcd, target_pcd, aligned_pcd])
-            o3d.io.write_point_cloud("aligned.ply", source_pcd + target_pcd + aligned_pcd)
+            o3d.io.write_point_cloud("aligned.ply", target_pcd + aligned_pcd)
         else:
             # o3d.visualization.draw_geometries([source_pcd, target_pcd])
             o3d.io.write_point_cloud("aligned.ply", source_pcd + target_pcd)
@@ -163,13 +163,23 @@ if __name__ == "__main__":
     transform = Compose([
         RandomTransformSE3(rot_mag=180, trans_mag=0.5, scale_range=(0.5, 1.5)),
         Resampler(1024),
-        # RandomJitter(scale=0.01, clip=0.05),
+        RandomJitter(scale=0.01, clip=0.05),
     ])
 
     pc = dict(points=source, points_ts=target)
     sample = transform(pc)
     source = sample['points']
     target = sample['points_ts']
+
+    # save both point clouds
+    source_pcd = o3d.geometry.PointCloud()
+    source_pcd.points = o3d.utility.Vector3dVector(source)
+    o3d.io.write_point_cloud("source.ply", source_pcd)
+
+    target_pcd = o3d.geometry.PointCloud()
+    target_pcd.points = o3d.utility.Vector3dVector(target)
+    o3d.io.write_point_cloud("target.ply", target_pcd)
+
     
 
     # dataset = ModelNetHdf(dataset_path='data/modelnet40_ply_hdf5_2048', subset='train', categories=['airplane'],
