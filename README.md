@@ -1,6 +1,6 @@
 # HEGN: Hierarchical Equivariant Graph Neural Network for 9DoF Point Cloud Registration
 
-This repository is the non official implementation of the paper:
+This repository is the unofficial implementation of the paper:
 
 > **Hierarchical Equivariant Graph Neural Network for 9DoF Point Cloud Registration*
 
